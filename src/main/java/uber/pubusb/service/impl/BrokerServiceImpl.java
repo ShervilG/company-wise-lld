@@ -7,6 +7,7 @@ import uber.pubusb.service.BrokerService;
 import uber.pubusb.service.ConsumerService;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -14,11 +15,13 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 public class BrokerServiceImpl implements BrokerService {
   private final ConcurrentMap<String, Topic> topicNameMap;
+  private final ConcurrentMap<String, List<Consumer>> topicNameToConsumerMap;
   private final ConsumerService consumerService;
 
   public BrokerServiceImpl(ConsumerService consumerService) {
     this.consumerService = consumerService;
     this.topicNameMap = new ConcurrentHashMap<>();
+    this.topicNameToConsumerMap = new ConcurrentHashMap<>();
   }
 
   @Override
@@ -41,7 +44,7 @@ public class BrokerServiceImpl implements BrokerService {
       return;
     }
 
-    topicNameMap.get(topicName).getConsumerList().add(consumer);
+    topicNameToConsumerMap.get(topicName).add(consumer);
   }
 
   @Override
@@ -49,11 +52,11 @@ public class BrokerServiceImpl implements BrokerService {
     Topic newTopic = new Topic().toBuilder()
         .topicId(UUID.randomUUID().toString())
         .topicName(topicName)
-        .consumerList(new ArrayList<>())
         .queue(new LinkedBlockingQueue<>())
         .build();
 
     this.topicNameMap.putIfAbsent(topicName, newTopic);
+    this.topicNameToConsumerMap.putIfAbsent(topicName, new ArrayList<>());
 
     Thread topicThread = new Thread(() -> listenOnTopicAndPushUpdatesToConsumer(newTopic));
     topicThread.start();
@@ -64,7 +67,7 @@ public class BrokerServiceImpl implements BrokerService {
       try {
        String data = topic.getQueue().take();
 
-       topic.getConsumerList().forEach(consumer -> {
+       topicNameToConsumerMap.get(topic.getTopicName()).forEach(consumer -> {
          this.consumerService.pushDataToConsumer(consumer, topic.getTopicName(), data);
        });
       } catch (InterruptedException exception) {
